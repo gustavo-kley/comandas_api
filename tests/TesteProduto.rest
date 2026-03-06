@@ -11,7 +11,7 @@ content-type: application/json
 
 {
     "nome" : "Motor Elétrico",
-    "descricao" : "Motor Elétrico 10HP",
+    "descricao" : "Motor Elétrico 100HP",
     "preco" : 15.50,
     "quantidade" : 10,
     "categoria" : "Máquinas",
