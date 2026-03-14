@@ -3,7 +3,7 @@
 GET http://localhost:8000/produto/ HTTP/1.1
 
 ### Verbo GET – listar um
-GET http://localhost:8000/produto/2 HTTP/1.1
+GET http://localhost:8000/produto/1 HTTP/1.1
 
 ### Verbo POST – adicionar
 POST http://127.0.0.1:8000/produto/ HTTP/1.1
@@ -12,30 +12,20 @@ content-type: application/json
 {
     "nome" : "Motor Elétrico",
     "descricao" : "Motor Elétrico 100HP",
-    "preco" : 15.50,
-    "quantidade" : 10,
-    "categoria" : "Máquinas",
-    "foto" : "foto.jpg",
-    "disponivel" : false,
-    "estoque" : 10,
-    "fornecedor" : "WEG"
+    "foto": "teste.png",
+    "valor_unitario": 10.5
 }
 
 ### Verbo PUT – atualiza
-PUT http://127.0.0.1:8000/produto/2 HTTP/1.1
+PUT http://127.0.0.1:8000/produto/1 HTTP/1.1
 content-type: application/json
 
 {
     "nome" : "Motor Elétrico",
-    "descricao" : "Motor Elétrico 10HP",
-    "preco" : 15.50,
-    "quantidade" : 10,
-    "categoria" : "Máquinas",
-    "foto" : "foto.jpg",
-    "disponivel" : false,
-    "estoque" : 10,
-    "fornecedor" : "WEG"
+    "descricao" : "Motor Elétrico 1020HP",
+    "foto": "teste.png",
+    "valor_unitario": 1000
 }
 
 ### Verbo DELETE - excluir
-DELETE http://127.0.0.1:8000/funcionario/2 HTTP/1.1
+DELETE http://127.0.0.1:8000/produto/2 HTTP/1.1
