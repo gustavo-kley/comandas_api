@@ -12,16 +12,16 @@ content-type: application/json
 {
     "nome" : "Gustavo Kley",
     "cpf" : "1",
-    "telefone" : "tel2383738"
+    "telefone" : "5432383738"
 }
 
 ### Verbo PUT – atualiza
-PUT http://127.0.0.1:8000/cliente/2 HTTP/1.1
+PUT http://127.0.0.1:8000/cliente/1 HTTP/1.1
 content-type: application/json
 
 {
     "nome" : "Gustavo Kley",
-    "cpf" : "01234567890",
+    "cpf" : "01235567890",
     "telefone" : "tel2383738"
 }
 
