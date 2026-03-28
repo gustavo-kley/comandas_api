@@ -12,14 +12,18 @@ content-type: application/json
 {
     "nome" : "Gustavo Kley",
     "matricula" : "gu1234",
-    "cpf" : "12345678920",
+    "cpf" : "15161718194",
     "telefone" : "tel2383738",
     "grupo" : 2,
     "senha" : "ee29eb4a8725678278ac4320e7"
 }
 
 ### Verbo PUT – atualiza
+<<<<<<< HEAD
 PUT http://127.0.0.1:8000/funcionario HTTP/1.1
+=======
+PUT http://127.0.0.1:8000/funcionario/1 HTTP/1.1
+>>>>>>> hash
 content-type: application/json
 {
     "nome" : "Gustavo Kleyy",
@@ -27,7 +31,7 @@ content-type: application/json
     "cpf" : "01234567890",
     "telefone" : "tel2383738",
     "grupo" : 1,
-    "senha" : "dc7378a6b6316017b81c51d720e7"
+    "senha" : "dc7378a6b6316017b81c51d720we7"
 }
 
 ### Verbo DELETE - excluir
