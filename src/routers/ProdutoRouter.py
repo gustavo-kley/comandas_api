@@ -8,20 +8,25 @@ from domain.schemas.ProdutoSchema import (
     ProdutoUpdate,
     ProdutoResponse,
 )
+from domain.schemas.AuthSchema import FuncionarioAuth
+
 from infra.orm.ProdutoModel import ProdutoDB
 from infra.database import get_db
+from infra.dependencies import get_current_active_user, require_group
 
 router = APIRouter()
 
 
-# Criar as rotas/endpoints: GET, POST, PUT, DELETE
 @router.get(
     "/produto/",
     response_model=List[ProdutoResponse],
     tags=["Produto"],
     status_code=status.HTTP_200_OK,
 )
-async def get_produtos(db: Session = Depends(get_db)):
+async def get_produtos(
+    db: Session = Depends(get_db),
+    current_user: FuncionarioAuth = Depends(get_current_active_user)
+):
     """Retorna todos os produtos"""
     try:
         produtos = db.query(ProdutoDB).all()
@@ -39,7 +44,11 @@ async def get_produtos(db: Session = Depends(get_db)):
     tags=["Produto"],
     status_code=status.HTTP_200_OK,
 )
-async def get_produto(id: int, db: Session = Depends(get_db)):
+async def get_produto(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: FuncionarioAuth = Depends(get_current_active_user)
+):
     """Retorna um produto específico pelo ID"""
     try:
         produto = db.query(ProdutoDB).filter(ProdutoDB.id == id).first()
@@ -67,7 +76,9 @@ async def get_produto(id: int, db: Session = Depends(get_db)):
     tags=["Produto"],
 )
 async def post_produto(
-    produto_data: ProdutoCreate, db: Session = Depends(get_db)
+    produto_data: ProdutoCreate,
+    db: Session = Depends(get_db),
+    current_user: FuncionarioAuth = Depends(require_group([1]))
 ):
     """Cria um novo produto"""
     try:
@@ -100,11 +111,15 @@ async def post_produto(
     status_code=status.HTTP_200_OK,
 )
 async def put_produto(
-    id: int, produto_data: ProdutoUpdate, db: Session = Depends(get_db)
+    id: int,
+    produto_data: ProdutoUpdate,
+    db: Session = Depends(get_db),
+    current_user: FuncionarioAuth = Depends(require_group([1]))
 ):
     """Atualiza um produto existente"""
     try:
         produto = db.query(ProdutoDB).filter(ProdutoDB.id == id).first()
+
         if not produto:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -136,7 +151,11 @@ async def put_produto(
     tags=["Produto"],
     summary="Remover produto",
 )
-async def delete_produto(id: int, db: Session = Depends(get_db)):
+async def delete_produto(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: FuncionarioAuth = Depends(require_group([1]))
+):
     """Remove um produto"""
     try:
         produto = db.query(ProdutoDB).filter(ProdutoDB.id == id).first()

@@ -19,11 +19,7 @@ content-type: application/json
 }
 
 ### Verbo PUT – atualiza
-<<<<<<< HEAD
-PUT http://127.0.0.1:8000/funcionario HTTP/1.1
-=======
 PUT http://127.0.0.1:8000/funcionario/1 HTTP/1.1
->>>>>>> hash
 content-type: application/json
 {
     "nome" : "Gustavo Kleyy",
