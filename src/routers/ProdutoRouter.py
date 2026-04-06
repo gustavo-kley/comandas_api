@@ -1,5 +1,9 @@
 # Gustavo Kley
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from services.AuditoriaService import AuditoriaService
+from infra.rate_limit import limiter, get_rate_limit
+from slowapi.errors import RateLimitExceeded
+
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -17,16 +21,9 @@ from infra.dependencies import get_current_active_user, require_group
 router = APIRouter()
 
 
-@router.get(
-    "/produto/",
-    response_model=List[ProdutoResponse],
-    tags=["Produto"],
-    status_code=status.HTTP_200_OK,
-)
-async def get_produtos(
-    db: Session = Depends(get_db),
-    current_user: FuncionarioAuth = Depends(get_current_active_user)
-):
+@router.get("/produto/", response_model=List[ProdutoResponse], tags=["Produto"], status_code=status.HTTP_200_OK)
+@limiter.limit(get_rate_limit("critical"))
+async def get_produtos( request: Request,db: Session = Depends(get_db), current_user: FuncionarioAuth = Depends(get_current_active_user)):
     """Retorna todos os produtos"""
     try:
         produtos = db.query(ProdutoDB).all()
@@ -38,17 +35,8 @@ async def get_produtos(
         )
 
 
-@router.get(
-    "/produto/{id}",
-    response_model=ProdutoResponse,
-    tags=["Produto"],
-    status_code=status.HTTP_200_OK,
-)
-async def get_produto(
-    id: int,
-    db: Session = Depends(get_db),
-    current_user: FuncionarioAuth = Depends(get_current_active_user)
-):
+@router.get("/produto/{id}", response_model=ProdutoResponse, tags=["Produto"], status_code=status.HTTP_200_OK)
+async def get_produto( request: Request, id: int, db: Session = Depends(get_db), current_user: FuncionarioAuth = Depends(get_current_active_user)):
     """Retorna um produto específico pelo ID"""
     try:
         produto = db.query(ProdutoDB).filter(ProdutoDB.id == id).first()
@@ -69,17 +57,8 @@ async def get_produto(
         )
 
 
-@router.post(
-    "/produto/",
-    response_model=ProdutoResponse,
-    status_code=status.HTTP_201_CREATED,
-    tags=["Produto"],
-)
-async def post_produto(
-    produto_data: ProdutoCreate,
-    db: Session = Depends(get_db),
-    current_user: FuncionarioAuth = Depends(require_group([1]))
-):
+@router.post("/produto/", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED, tags=["Produto"])
+async def post_produto(request: Request, produto_data: ProdutoCreate, db: Session = Depends(get_db), current_user: FuncionarioAuth = Depends(require_group([1]))):
     """Cria um novo produto"""
     try:
         novo_produto = ProdutoDB(
@@ -93,6 +72,19 @@ async def post_produto(
         db.add(novo_produto)
         db.commit()
         db.refresh(novo_produto)
+        
+        # Depois de tudo executado e antes do return, registra a ação na auditoria
+        AuditoriaService.registrar_acao(
+            db=db,
+            funcionario_id=current_user.id,
+            acao="CREATE",
+            recurso="PRODUTO",
+            recurso_id=novo_produto.id,
+            dados_antigos=None,
+            dados_novos=novo_produto, # Objeto SQLAlchemy com dados novos
+            request=request # Request completo para capturar IP e user agent
+        )
+        
         return novo_produto
     except HTTPException:
         raise
@@ -104,18 +96,8 @@ async def post_produto(
         )
 
 
-@router.put(
-    "/produto/{id}",
-    response_model=ProdutoResponse,
-    tags=["Produto"],
-    status_code=status.HTTP_200_OK,
-)
-async def put_produto(
-    id: int,
-    produto_data: ProdutoUpdate,
-    db: Session = Depends(get_db),
-    current_user: FuncionarioAuth = Depends(require_group([1]))
-):
+@router.put("/produto/{id}", response_model=ProdutoResponse, tags=["Produto"], status_code=status.HTTP_200_OK)
+async def put_produto(request: Request, id: int, produto_data: ProdutoUpdate, db: Session = Depends(get_db),current_user: FuncionarioAuth = Depends(require_group([1]))):
     """Atualiza um produto existente"""
     try:
         produto = db.query(ProdutoDB).filter(ProdutoDB.id == id).first()
@@ -134,6 +116,18 @@ async def put_produto(
         db.commit()
         db.refresh(produto)
 
+        # Depois de tudo executado e antes do return, registra a ação na auditoria
+        AuditoriaService.registrar_acao(
+            db=db,
+            funcionario_id=current_user.id,
+            acao="UPDATE",
+            recurso="PRODUTO",
+            recurso_id=produto.id,
+            dados_antigos=produto, # Objeto SQLAlchemy com dados antigos
+            dados_novos=produto, # Objeto SQLAlchemy com dados novos
+            request=request # Request completo para capturar IP e user agent
+        )
+
         return produto
     except HTTPException:
         raise
@@ -145,17 +139,8 @@ async def put_produto(
         )
 
 
-@router.delete(
-    "/produto/{id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    tags=["Produto"],
-    summary="Remover produto",
-)
-async def delete_produto(
-    id: int,
-    db: Session = Depends(get_db),
-    current_user: FuncionarioAuth = Depends(require_group([1]))
-):
+@router.delete( "/produto/{id}",status_code=status.HTTP_204_NO_CONTENT, tags=["Produto"], summary="Remover produto")
+async def delete_produto(request: Request, id: int, db: Session = Depends(get_db), current_user: FuncionarioAuth = Depends(require_group([1]))):
     """Remove um produto"""
     try:
         produto = db.query(ProdutoDB).filter(ProdutoDB.id == id).first()
@@ -168,6 +153,18 @@ async def delete_produto(
 
         db.delete(produto)
         db.commit()
+
+        # Depois de tudo executado e antes do return, registra a ação na auditoria
+        AuditoriaService.registrar_acao(
+            db=db,
+            funcionario_id=current_user.id,
+            acao="DELETE",
+            recurso="PRODUTO",
+            recurso_id=produto.id,
+            dados_antigos=produto,
+            dados_novos=None,
+            request=request
+        )
 
         return None
     except HTTPException:

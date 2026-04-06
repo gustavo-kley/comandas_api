@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from services.AuditoriaService import AuditoriaService
+from infra.rate_limit import limiter, get_rate_limit
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
@@ -9,16 +11,13 @@ from infra.database import get_db
 from infra.security import verify_password, create_access_token, create_refresh_token, verify_refresh_token
 from infra.dependencies import get_current_active_user
 
+from services.AuditoriaService import AuditoriaService
+
 from settings import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 router = APIRouter()
 
-@router.post(
-    "/auth/login",
-    response_model=TokenResponse,
-    tags=["Autenticação"],
-    summary="Login de funcionário - pública - retorna access e refresh token"
-)
-async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+@router.post("/auth/login", response_model=TokenResponse, tags=["Autenticação"], summary="Login de funcionário - pública - retorna access e refresh token")
+async def login( request: Request, login_data: LoginRequest, db: Session = Depends(get_db)):
     """
     Realiza login do funcionário e retorna access token e refresh token
 
@@ -72,6 +71,15 @@ async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
             }
         )
 
+        # Registrar auditoria de login
+        AuditoriaService.registrar_acao(
+            db=db,
+            funcionario_id=funcionario.id,
+            acao="LOGIN",
+            recurso="AUTH",
+            request=request
+        )
+
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -96,6 +104,7 @@ async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     summary="Refresh token - pública - renova access token"
 )
 async def refresh_token(
+    request: Request,
     refresh_data: RefreshTokenRequest,
     db: Session = Depends(get_db)
 ):
@@ -145,6 +154,15 @@ async def refresh_token(
             }
         )
 
+        # Registrar auditoria de login
+        AuditoriaService.registrar_acao(
+            db=db,
+            funcionario_id=funcionario.id,
+            acao="LOGIN",
+            recurso="AUTH",
+            request=request
+        )
+
         return TokenResponse(
             access_token=access_token,
             refresh_token=new_refresh_token,
@@ -163,13 +181,10 @@ async def refresh_token(
         )
 
 
-@router.get(
-    "/auth/me",
-    response_model=FuncionarioAuth,
-    tags=["Autenticação"],
-    summary="Dados do usuário atual - protegida por autenticação"
-)
+@router.get("/auth/me", response_model=FuncionarioAuth, tags=["Autenticação"], summary="Dados do usuário atual - protegida por autenticação")
+@limiter.limit(get_rate_limit("critical"))
 async def get_current_user_info(
+    request: Request,
     current_user: FuncionarioAuth = Depends(get_current_active_user)
 ):
     """
