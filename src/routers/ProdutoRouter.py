@@ -1,11 +1,11 @@
 # Gustavo Kley
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from services.AuditoriaService import AuditoriaService
 from infra.rate_limit import limiter, get_rate_limit
 from slowapi.errors import RateLimitExceeded
 
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from domain.schemas.ProdutoSchema import (
     ProdutoCreate,
@@ -21,17 +21,37 @@ from infra.dependencies import get_current_active_user, require_group
 router = APIRouter()
 
 
-@router.get("/produto/", response_model=List[ProdutoResponse], tags=["Produto"], status_code=status.HTTP_200_OK)
-@limiter.limit(get_rate_limit("critical"))
-async def get_produtos( request: Request,db: Session = Depends(get_db), current_user: FuncionarioAuth = Depends(get_current_active_user)):
-    """Retorna todos os produtos"""
+@router.get("/produto/", response_model=List[ProdutoResponse], tags=["Produto"], dependencies=[Depends(get_current_active_user)], status_code=status.HTTP_200_OK,
+ summary="Listar todos os produtos - protegida por JWT e grupo 1")
+@limiter.limit(get_rate_limit("moderate"))
+async def get_produto(
+    request: Request,
+    skip: int = Query(0, ge=0, description="Número de registros para pular"), # ge = maior ou igual
+    limit: int = Query(100, ge=1, le=1000, description="Número máximo de registros"), # ge = maior ou igual, le = menor ou igual
+    id: Optional[int] = Query(None, description="Filtrar por ID"),
+    nome: Optional[str] = Query(None, description="Filtrar por nome"),
+    descricao: Optional[str] = Query(None, description="Filtrar por descrição"),
+    valor: Optional[float] = Query(ge = 0, le=1000, description="Filtrar por valor"), # ge = maior ou igual, le = menor ou igual
+    db: Session = Depends(get_db)
+):
     try:
-        produtos = db.query(ProdutoDB).all()
+        query = db.query(ProdutoDB)
+        
+        if id:
+            query = query.filter(ProdutoDB.id == id)
+        if nome:
+            query = query.filter(ProdutoDB.nome.ilike(f"%{nome}%"))
+        if descricao:
+            query = query.filter(ProdutoDB.descricao.ilike(f"%{descricao}%"))
+        if valor:
+            query = query.filter(ProdutoDB.valor_unitario == valor)
+        
+        produtos = query.offset(skip).limit(limit).all()
         return produtos
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao buscar produtos: {str(e)}",
+            detail=f"Erro ao listar produtos: {str(e)}",
         )
 
 

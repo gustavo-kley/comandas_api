@@ -1,9 +1,9 @@
 # Gustavo Kley
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from services.AuditoriaService import AuditoriaService
 from infra.rate_limit import limiter, get_rate_limit
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 # Domain Schemas
 from domain.schemas.ClienteSchema import (
@@ -21,23 +21,42 @@ from infra.dependencies import get_current_active_user, require_group
 router = APIRouter()
 
 
-@router.get(
-    "/cliente/",
-    response_model=List[ClienteResponse],
-    tags=["Cliente"],
-    status_code=status.HTTP_200_OK
-)
-@limiter.limit(get_rate_limit("critical"))
-async def get_cliente( request: Request,db: Session = Depends(get_db), current_user: FuncionarioAuth = Depends(get_current_active_user)):
-    """Retorna todos os Clientes"""
+@router.get("/cliente/", response_model=List[ClienteResponse], tags=["Cliente"], dependencies=[Depends(get_current_active_user)], status_code=status.HTTP_200_OK,
+ summary="Listar todos os clientes - protegida por JWT e grupo 1")
+@limiter.limit(get_rate_limit("moderate"))
+async def get_cliente(
+    request: Request,
+    skip: int = Query(0, ge=0, description="Número de registros para pular"), # ge = maior ou igual
+    limit: int = Query(100, ge=1, le=1000, description="Número máximo de registros"), # ge = maior ou igual, le = menor ou igual
+    id: Optional[int] = Query(None, description="Filtrar por ID"),
+    nome: Optional[str] = Query(None, description="Filtrar por nome"),
+    cpf: Optional[str] = Query(None, description="Filtrar por CPF"),
+    telefone: Optional[str] = Query(None, description="Filtrar por telefone"),
+    db: Session = Depends(get_db)
+):
     try:
-        clientes = db.query(ClienteDB).all()
+        query = db.query(ClienteDB)
+
+    # Aplicar filtros
+        if id is not None:
+            query = query.filter(ClienteDB.id == id)
+        if nome is not None:
+            query = query.filter(ClienteDB.nome.ilike(f"%{nome}%")) # ilike = case insensitive
+        if cpf is not None:
+            query = query.filter(ClienteDB.cpf == cpf)
+        if telefone is not None:
+            query = query.filter(ClienteDB.telefone.ilike(f"%{telefone}%"))
+            
+    # Aplicar paginação
+        clientes = query.offset(skip).limit(limit).all()
+
         return clientes
+    except RateLimitExceeded:
+        # Propagar exceção original para o handler personalizado
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao buscar Clientes: {str(e)}"
-        )
+        # Apenas erros reais da aplicação (não rate limit)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao buscar clientes: {str(e)}")
 
 
 @router.get(

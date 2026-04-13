@@ -5,6 +5,16 @@ GET http://localhost:8000/produto/ HTTP/1.1
 ### Verbo GET – listar um
 GET http://localhost:8000/produto/1 HTTP/1.1
 
+### Verbo GET – listar um com autenticação
+GET http://localhost:8000/produto/public HTTP/1.1
+content-type: application/json
+{
+    "nome": "Produto 1",
+    "descricao": "Descrição do produto 1",
+    "foto": "teste.png",
+    "valor_unitario": 10.5
+}
+
 ### Verbo POST – adicionar
 POST http://127.0.0.1:8000/produto/ HTTP/1.1
 content-type: application/json

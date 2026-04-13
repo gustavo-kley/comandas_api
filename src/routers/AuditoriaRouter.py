@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
@@ -10,112 +11,135 @@ from domain.schemas.AuthSchema import FuncionarioAuth
 from infra.orm.AuditoriaModel import AuditoriaDB
 from infra.orm.FuncionarioModel import FuncionarioDB
 from infra.database import get_db
+from infra.database import get_async_db
 from infra.dependencies import require_group, get_current_active_user
 from infra.rate_limit import limiter, get_rate_limit
 
 router = APIRouter()
 
-@router.get("/auditoria", response_model=List[AuditoriaResponse], tags=["Auditoria"], summary="Listar registros de auditoria - protegida por JWT e grupo 1")
-@limiter.limit(get_rate_limit("moderate"))
-async def listar_auditoria(
+# Lista todas as comandas com paginação e filtro opcional por status {0 - aberta, 1 - fechada, 2 - cancelada}
+@router.get("/auditoria/", response_model=List[AuditoriaResponse], tags=["Auditoria"], summary="Listar todas as auditorias - opção de filtro e paginação - protegida por JWT")
+@limiter.limit("moderate")
+async def get_auditorias(
     request: Request,
+    skip: int = Query(0, ge=0, description="Número de registros para pular"),  # ge = maior ou igual
+    limit: int = Query(100, ge=1, le=1000, description="Número máximo de registros"),  # ge = maior ou igual, le = menor ou igual
+    id: Optional[int] = Query(None, description="Filtrar por ID"),
     funcionario_id: Optional[int] = Query(None, description="Filtrar por funcionário"),
-    acao: Optional[str] = Query(None, description="Filtrar por ação (separar múltiplas com vírgula)"),
-    recurso: Optional[str] = Query(None, description="Filtrar por recurso (separar múltiplos com vírgula)"),
-    data_inicio: Optional[str] = Query(None, description="Data início (YYYY-MM-DD)"),
-    data_fim: Optional[str] = Query(None, description="Data fim (YYYY-MM-DD)"),
-    skip: int = Query(0, ge=0, description="Número de registros para pular"),
-    limite: int = Query(100, ge=1, le=1000, description="Limite de registros"),
-    db: Session = Depends(get_db),
-    current_user: FuncionarioAuth = Depends(require_group([1]))
+    acao: Optional[str] = Query(None, description="Filtrar por ação"),
+    recurso: Optional[str] = Query(None, description="Filtrar por recurso"),
+    recurso_id: Optional[int] = Query(None, description="Filtrar por ID do recurso"),
+    ip_address: Optional[str] = Query(None, description="Filtrar por IP"),
+    user_agent: Optional[str] = Query(None, description="Filtrar por user agent"),
+    data_hora: Optional[datetime] = Query(None, description="Filtrar por data e hora"),
+    cliente_id: Optional[int] = Query(None, description="Filtrar por cliente"),
+    data_inicio: Optional[datetime] = Query(None, description="Filtrar por data inicial"),
+    data_fim: Optional[datetime] = Query(None, description="Filtrar por data final"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: FuncionarioAuth = Depends(get_current_active_user)
 ):
-    """
-    Lista registros de auditoria com filtros opcionais.
-    - Apenas administradores podem acessar.
-    """
     try:
-        # Construir query base com joins manuais
+        # busca a comanda, funcionário e cliente com joins
         query = (
-            db.query(AuditoriaDB, FuncionarioDB)
-            .join(FuncionarioDB, FuncionarioDB.id == AuditoriaDB.funcionario_id)
+            select(AuditoriaDB, FuncionarioDB)
+            .outerjoin(FuncionarioDB, FuncionarioDB.id == AuditoriaDB.funcionario_id)
         )
 
         # Aplicar filtros
-        if funcionario_id:
-            query = query.filter(AuditoriaDB.funcionario_id == funcionario_id)
+        conditions = []
 
-        if acao:
-            acoes_list = [a.strip().upper() for a in acao.split(",")]
-            query = query.filter(AuditoriaDB.acao.in_(acoes_list))
+        if id is not None:
+            conditions.append(  AuditoriaDB.id == id)
 
-        if recurso:
-            recursos_list = [r.strip().lower() for r in recurso.split(",")]
-            query = query.filter(AuditoriaDB.recurso.in_(recursos_list))
+        if acao is not None:
+            conditions.append(AuditoriaDB.acao == acao)
 
-        if data_inicio:
-            try:
-                data_inicio_dt = datetime.strptime(data_inicio, "%Y-%m-%d")
-                query = query.filter(AuditoriaDB.data_hora >= data_inicio_dt)
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Data início inválida. Use formato YYYY-MM-DD"
-                )
+        if recurso is not None:
+            conditions.append(AuditoriaDB.recurso == recurso)
 
-        if data_fim:
-            try:
-                data_fim_dt = datetime.strptime(data_fim, "%Y-%m-%d")
-                query = query.filter(AuditoriaDB.data_hora <= data_fim_dt)
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Data fim inválida. Use formato YYYY-MM-DD"
-                )
+        if recurso_id is not None:
+            conditions.append(AuditoriaDB.recurso_id == recurso_id)
 
-        # Contar total para metadata
-        total_count = query.count()
+        if ip_address is not None:
+            conditions.append(AuditoriaDB.ip_address == ip_address)
 
-        # Ordenar por data descendente, aplicar paginação e limitar
-        auditorias = (
-            query.order_by(desc(AuditoriaDB.data_hora))
-            .offset(skip)
-            .limit(limite)
-            .all()
-        )
+        if user_agent is not None:
+            conditions.append(AuditoriaDB.user_agent == user_agent)
 
-        # Montar response
-        result = []
-        for auditoria, funcionario in auditorias:
-            result.append(
-                AuditoriaResponse(
-                    id=auditoria.id,
-                    funcionario_id=auditoria.funcionario_id,
-                    funcionario={
-                        "id": funcionario.id,
-                        "nome": funcionario.nome,
-                        "matricula": funcionario.matricula,
-                        "grupo": funcionario.grupo
-                    },
-                    acao=auditoria.acao,
-                    recurso=auditoria.recurso,
-                    recurso_id=auditoria.recurso_id,
-                    dados_antigos=auditoria.dados_antigos,
-                    dados_novos=auditoria.dados_novos,
-                    ip_address=auditoria.ip_address,
-                    user_agent=auditoria.user_agent,
-                    data_hora=auditoria.data_hora
-                )
+        if data_hora is not None:
+            conditions.append(AuditoriaDB.data_hora == data_hora)
+
+        if funcionario_id is not None:
+            conditions.append(AuditoriaDB.funcionario_id == funcionario_id)
+
+        if cliente_id is not None:
+            conditions.append(AuditoriaDB.cliente_id == cliente_id)
+
+        if data_inicio is not None:
+            conditions.append(AuditoriaDB.data_hora >= data_inicio)
+
+        if data_fim is not None:
+            conditions.append(AuditoriaDB.data_hora <= data_fim)
+
+        if status is not None:
+            conditions.append(ComandaDB.status == status)
+
+        if funcionario_id is not None:
+            conditions.append(ComandaDB.funcionario_id == funcionario_id)
+
+        if cliente_id is not None:
+            conditions.append(ComandaDB.cliente_id == cliente_id)
+
+        if data_inicio is not None:
+            conditions.append(ComandaDB.data_hora >= data_inicio)
+
+        if data_fim is not None:
+            conditions.append(ComandaDB.data_hora <= data_fim)
+
+        # Aplicar condições à query
+        if conditions:
+            query = query.where(*conditions)
+
+        # executar query com paginação
+        result = await db.execute(query.offset(skip).limit(limit))
+        results = result.all()
+
+        # Construir lista de responses manualmente
+        comandas_response = []
+
+        for comanda, funcionario, cliente in results:
+            comanda_response = ComandaResponse(
+                id=comanda.id,
+                comanda=comanda.comanda,
+                data_hora=comanda.data_hora,
+                status=comanda.status,
+                cliente_id=comanda.cliente_id,
+                funcionario_id=comanda.funcionario_id,
+                funcionario=FuncionarioResponse(
+                    id=funcionario.id,
+                    nome=funcionario.nome,
+                    matricula=funcionario.matricula,
+                    cpf=funcionario.cpf,
+                    telefone=funcionario.telefone,
+                    grupo=funcionario.grupo
+                ) if funcionario else None,
+                cliente=ClienteResponse(
+                    id=cliente.id,
+                    nome=cliente.nome,
+                    cpf=cliente.cpf,
+                    telefone=cliente.telefone
+                ) if cliente else None
             )
+            comandas_response.append(comanda_response)
 
-        return result
+        return comandas_response
 
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao listar auditoria: {str(e)}"
+            detail=f"Erro ao buscar comandas: {str(e)}"
         )
+
 
 
 @router.get(
